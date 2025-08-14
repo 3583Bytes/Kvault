@@ -12,6 +12,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 
 namespace PasswordManager
 {
@@ -477,6 +478,9 @@ namespace PasswordManager
         private readonly IEncryptionService _enc;
         private readonly IClipboardService _clipboard;
         private readonly IPasswordGenerator _passwordGenerator;
+        private readonly TimeSpan _idleTimeout = TimeSpan.FromMinutes(5);
+        private readonly System.Threading.Timer _idleTimer;
+        private readonly object _idleSync = new();
         private VaultData _vault;
         private readonly VaultSession _session;
 
@@ -490,6 +494,7 @@ namespace PasswordManager
             _clipboard = new CrossPlatformClipboardService();
             _passwordGenerator = new CryptoPasswordGenerator();
             _session = new VaultSession(_vaultPath, _vault, _store, _kdf);
+            _idleTimer = new Timer(OnIdleTimeout, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
 
         public void Run()
@@ -504,6 +509,7 @@ namespace PasswordManager
                 var input = Console.ReadLine();
                 if (string.IsNullOrWhiteSpace(input)) continue;
                 var parts = SplitArgs(input);
+                ResetIdleTimer();
                 var cmd = parts[0].ToLowerInvariant();
 
                 try
@@ -550,11 +556,13 @@ namespace PasswordManager
             if (_session.IsUnlocked) { Console.WriteLine("Already unlocked."); return; }
             var master = PromptHidden("Master password: ");
             _session.Unlock(master);
+            ResetIdleTimer();
             Console.WriteLine("Unlocked.");
         }
 
         private void CmdLock()
         {
+            StopIdleTimer();
             _session.Lock();
             Console.WriteLine("Locked.");
         }
@@ -782,7 +790,7 @@ namespace PasswordManager
         {
             Console.WriteLine("==============================");
             Console.WriteLine("  Password Manager (Console)");
-            Console.WriteLine("  AES-GCM | PBKDF2 | JSON Store");
+            Console.WriteLine("  AES-GCM | PBKDF2 | JSON Store | Auto-lock 5m");
             Console.WriteLine("==============================\n");
         }
 
@@ -837,6 +845,33 @@ namespace PasswordManager
             }
             if (current.Length > 0) args.Add(current.ToString());
             return args.ToArray();
+        }
+
+        private void OnIdleTimeout(object? state)
+        {
+            lock (_idleSync)
+            {
+                if (!_session.IsUnlocked) return;
+                _session.Lock();
+                Console.WriteLine();
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("[Auto-lock] Vault locked after 5 minutes of inactivity.");
+                Console.ResetColor();
+                Console.Write("pm> ");
+            }
+        }
+
+        private void ResetIdleTimer()
+        {
+            if (_session.IsUnlocked)
+                _idleTimer.Change(_idleTimeout, Timeout.InfiniteTimeSpan);
+            else
+                _idleTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        }
+
+        private void StopIdleTimer()
+        {
+            _idleTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
 
         private void RequireUnlocked()
