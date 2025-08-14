@@ -254,6 +254,27 @@ namespace PasswordManager
             finally { CryptographicOperations.ZeroMemory(pwdBytes); }
         }
 
+        public bool AddTags(Guid id, IEnumerable<string> tags)
+        {
+            var cred = _vault.Credentials.FirstOrDefault(c => c.Id == id);
+            if (cred == null) return false;
+
+            cred.Tags ??= new List<string>();
+            foreach (var t in tags)
+            {
+                var tag = t?.Trim();
+                if (string.IsNullOrWhiteSpace(tag)) continue;
+
+                // prevent dupes (case-insensitive)
+                if (!cred.Tags.Any(x => string.Equals(x, tag, StringComparison.OrdinalIgnoreCase)))
+                    cred.Tags.Add(tag);
+            }
+
+            cred.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            _store.Save(_path, _vault);
+            return true;
+        }
+
         public Credential? FindByService(string service, string username)
         {
             return _vault.Credentials.FirstOrDefault(c =>
@@ -599,6 +620,7 @@ namespace PasswordManager
                         case "remove": CmdRemove(parts); break;
                         case "change-master": CmdChangeMaster(); break;
                         case "set": CmdSet(parts); break;
+                        case "tag": CmdTag(parts); break;
                         case "exit": case "quit": return;
                         default: Console.WriteLine("Unknown command. Type 'help'."); break;
                     }
@@ -639,6 +661,7 @@ namespace PasswordManager
             Console.WriteLine("Locked.");
         }
 
+
         private void CmdAdd(IReadOnlyList<string> args)
         {
             RequireUnlocked();
@@ -662,6 +685,28 @@ namespace PasswordManager
             using var repo = CreateRepository();
             var cred = repo.Add(service, username, notes, pwd);
             Console.WriteLine($"Added: {cred.Id} ({cred.Service}/{cred.Username})");
+        }
+
+        private void CmdTag(IReadOnlyList<string> args)
+        {
+            RequireUnlocked();
+            if (args.Count < 4 || !args[2].Equals("add", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("Usage: tag <credential-id> add <t1,t2,...>");
+                return;
+            }
+
+            if (!Guid.TryParse(args[1], out var id))
+            {
+                Console.WriteLine("Invalid id.");
+                return;
+            }
+
+            var toAdd = args[3]
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            using var repo = CreateRepository();
+            Console.WriteLine(repo.AddTags(id, toAdd) ? "Tags added." : "Not found.");
         }
 
         private void CmdGet(IReadOnlyList<string> args)
@@ -1051,6 +1096,7 @@ namespace PasswordManager
   search <term>            Search service/username/notes/tags
   update <id>              Update password by credential id (leave empty to auto-generate)
   remove <id>              Remove credential by id
+  tag <id> add <tag>       Add one tag to a credential
   change-master            Change master password (re-encrypts all)
   set clipboard-timeout <seconds|off>  Configure clipboard auto-clear (persisted)
   set idle-timeout <minutes|off>       Configure auto-lock timeout (persisted)
