@@ -302,8 +302,56 @@ namespace PasswordManager
             }
         }
     }
-
     #endregion
+
+    // Configuration
+    public sealed class AppConfig
+    {
+        public int ClipboardTimeoutSeconds { get; set; } = 20; // 0 to disable
+        public int IdleTimeoutMinutes { get; set; } = 5;       // 0 to disable
+    }
+
+    public interface IConfigStore
+    {
+        AppConfig LoadOrCreate(string path);
+        void Save(string path, AppConfig config);
+    }
+
+    public sealed class FileConfigStore : IConfigStore
+    {
+        private readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+
+        public AppConfig LoadOrCreate(string path)
+        {
+            var dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            if (!File.Exists(path))
+            {
+                var cfg = new AppConfig();
+                Save(path, cfg);
+                return cfg;
+            }
+            using var fs = File.OpenRead(path);
+            return JsonSerializer.Deserialize<AppConfig>(fs, _jsonOptions) ?? new AppConfig();
+        }
+
+        public void Save(string path, AppConfig config)
+        {
+            var dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            var tmp = path + ".tmp";
+            using (var fs = File.Create(tmp))
+            {
+                JsonSerializer.Serialize(fs, config, _jsonOptions);
+            }
+            if (File.Exists(path)) File.Replace(tmp, path, path + ".bak", ignoreMetadataErrors: true);
+            else File.Move(tmp, path);
+        }
+    }
 
     public sealed class VaultSession : IVaultSession
     {
@@ -474,12 +522,15 @@ namespace PasswordManager
     public sealed class App
     {
         private readonly string _vaultPath;
+        private readonly string _configPath;
+        private readonly IConfigStore _configStore;
+        private AppConfig _config;
         private readonly IVaultStore _store;
         private readonly IKeyDerivationService _kdf;
         private readonly IEncryptionService _enc;
         private readonly IClipboardService _clipboard;
         private readonly IPasswordGenerator _passwordGenerator;
-        private readonly TimeSpan _idleTimeout = TimeSpan.FromMinutes(5);
+        private TimeSpan _idleTimeout;
         private readonly System.Threading.Timer _idleTimer;
         private readonly object _idleSync = new();
         private readonly TimeSpan _clipboardClearDefault = TimeSpan.FromSeconds(20);
@@ -488,7 +539,7 @@ namespace PasswordManager
         private VaultData _vault;
         private readonly VaultSession _session;
 
-        public App(string vaultPath)
+        public App(string vaultPath, string configPath)
         {
             _vaultPath = vaultPath;
             _store = new FileVaultStore();
@@ -498,14 +549,18 @@ namespace PasswordManager
             _clipboard = new CrossPlatformClipboardService();
             _passwordGenerator = new CryptoPasswordGenerator();
             _session = new VaultSession(_vaultPath, _vault, _store, _kdf);
+            _configPath = configPath;
+            _configStore = new FileConfigStore();
+            _config = _configStore.LoadOrCreate(_configPath);
+            _idleTimeout = _config.IdleTimeoutMinutes > 0 ? TimeSpan.FromMinutes(_config.IdleTimeoutMinutes) : TimeSpan.Zero;
+            _clipboardClearAfter = _config.ClipboardTimeoutSeconds > 0 ? TimeSpan.FromSeconds(_config.ClipboardTimeoutSeconds) : TimeSpan.Zero;
             _idleTimer = new Timer(OnIdleTimeout, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
-            _clipboardClearAfter = _clipboardClearDefault;
             _clipboardTimer = new Timer(OnClipboardClear, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
 
         public void Run()
         {
-            WriteHeader();
+            this.WriteHeader();
             EnsureInitialized();
             Console.WriteLine("Type 'help' to see available commands.\n");
 
@@ -835,29 +890,62 @@ namespace PasswordManager
         {
             if (args.Count < 3)
             {
-                Console.WriteLine("Usage: set clipboard-timeout <seconds|off>");
+                Console.WriteLine("Usage: set <clipboard-timeout|idle-timeout> <value|off>");
                 return;
             }
             var key = args[1].ToLowerInvariant();
-            if (key != "clipboard-timeout") { Console.WriteLine("Unknown setting. Supported: clipboard-timeout"); return; }
-
             var val = args[2].ToLowerInvariant();
-            if (val == "off" || val == "0")
+
+            switch (key)
             {
-                _clipboardClearAfter = TimeSpan.Zero;
-                _clipboardTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
-                Console.WriteLine("Clipboard auto-clear disabled.");
+                case "clipboard-timeout":
+                    if (val == "off" || val == "0")
+                    {
+                        _clipboardClearAfter = TimeSpan.Zero;
+                        _config.ClipboardTimeoutSeconds = 0;
+                        _clipboardTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+                        Console.WriteLine("Clipboard auto-clear disabled.");
+                    }
+                    else if (int.TryParse(val, out var sec) && sec >= 0 && sec <= 600)
+                    {
+                        _clipboardClearAfter = TimeSpan.FromSeconds(sec);
+                        _config.ClipboardTimeoutSeconds = sec;
+                        Console.WriteLine($"Clipboard auto-clear set to {sec}s.");
+                        ScheduleClipboardClear();
+                    }
+                    else { Console.WriteLine("Invalid seconds. Use 0..600 or 'off'."); return; }
+                    break;
+
+                case "idle-timeout":
+                    if (val == "off" || val == "0")
+                    {
+                        _idleTimeout = TimeSpan.Zero;
+                        _config.IdleTimeoutMinutes = 0;
+                        StopIdleTimer();
+                        Console.WriteLine("Auto-lock disabled.");
+                    }
+                    else if (int.TryParse(val, out var minutes) && minutes >= 0 && minutes <= 120)
+                    {
+                        _idleTimeout = TimeSpan.FromMinutes(minutes);
+                        _config.IdleTimeoutMinutes = minutes;
+                        Console.WriteLine($"Auto-lock set to {minutes}m.");
+                        ResetIdleTimer();
+                    }
+                    else { Console.WriteLine("Invalid minutes. Use 0..120 or 'off'."); return; }
+                    break;
+
+                default:
+                    Console.WriteLine("Unknown setting. Supported: clipboard-timeout, idle-timeout");
+                    return;
             }
-            else if (int.TryParse(val, out var seconds) && seconds >= 0 && seconds <= 600)
+
+            // Persist config
+            try { _configStore.Save(_configPath, _config); }
+            catch (Exception ex)
             {
-                _clipboardClearAfter = TimeSpan.FromSeconds(seconds);
-                Console.WriteLine($"Clipboard auto-clear set to {seconds}s.");
-                // If we recently copied, reschedule
-                ScheduleClipboardClear();
-            }
-            else
-            {
-                Console.WriteLine("Invalid seconds. Use 0..600 or 'off'.");
+                Console.ForegroundColor = ConsoleColor.DarkYellow;
+                Console.WriteLine($"Warning: failed to save config: {ex.Message}");
+                Console.ResetColor();
             }
         }
 
@@ -870,12 +958,14 @@ namespace PasswordManager
             return new JsonCredentialRepository(_vaultPath, _vault, _store, _enc, _session.CurrentKey);
         }
 
-        private static void WriteHeader()
+        private void WriteHeader()
         {
             Console.WriteLine("==============================");
             Console.WriteLine("  Password Manager (Console)");
-            Console.WriteLine("  AES-GCM | PBKDF2 | JSON Store | Auto-lock 5m | Clipboard clear 20s");
-            Console.WriteLine("==============================\n");
+            var autoStr = _idleTimeout > TimeSpan.Zero ? $"Auto-lock {_idleTimeout.TotalMinutes:0}m" : "Auto-lock off";
+            var clipStr = _clipboardClearAfter > TimeSpan.Zero ? $"Clipboard clear {_clipboardClearAfter.TotalSeconds:0}s" : "Clipboard clear off";
+            Console.WriteLine($"  AES-GCM | PBKDF2 | JSON Store | {autoStr} | {clipStr}");
+            Console.WriteLine("==============================");
         }
 
         private static void PrintHelp()
@@ -893,8 +983,9 @@ namespace PasswordManager
   update <id>              Update password by credential id (leave empty to auto-generate)
   remove <id>              Remove credential by id
   change-master            Change master password (re-encrypts all)
-  exit|quit                Exit app
-  set clipboard-timeout <seconds|off>  Configure clipboard auto-clear (default 20s)");
+  set clipboard-timeout <seconds|off>  Configure clipboard auto-clear (persisted)
+  set idle-timeout <minutes|off>       Configure auto-lock timeout (persisted)
+  exit|quit                Exit app");
         }
 
         private static string PromptHidden(string prompt)
@@ -941,7 +1032,7 @@ namespace PasswordManager
                 _session.Lock();
                 Console.WriteLine();
                 Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("[Auto-lock] Vault locked after 5 minutes of inactivity.");
+                Console.WriteLine($"[Auto-lock] Vault locked after {_idleTimeout.TotalMinutes:0} minutes of inactivity.");
                 Console.ResetColor();
                 Console.Write("pm> ");
             }
@@ -949,7 +1040,7 @@ namespace PasswordManager
 
         private void ResetIdleTimer()
         {
-            if (_session.IsUnlocked)
+            if (_session.IsUnlocked && _idleTimeout > TimeSpan.Zero)
                 _idleTimer.Change(_idleTimeout, Timeout.InfiniteTimeSpan);
             else
                 _idleTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
@@ -1006,7 +1097,8 @@ namespace PasswordManager
             Directory.CreateDirectory(dataDir);
             var vaultPath = args.Length > 0 ? args[0] : Path.Combine(dataDir, "vault.json");
 
-            var app = new App(vaultPath);
+            var configPath = Path.Combine(dataDir, "config.json");
+            var app = new App(vaultPath, configPath);
             app.Run();
         }
     }
