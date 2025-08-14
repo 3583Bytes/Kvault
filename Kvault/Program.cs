@@ -23,6 +23,7 @@ namespace PasswordManager
         public string Service { get; set; } = string.Empty;            // e.g., "github.com"
         public string Username { get; set; } = string.Empty;           // e.g., "alice"
         public string? Notes { get; set; }                             // optional, stored plaintext by design choice
+        public List<string> Tags { get; set; } = new List<string>();  // simple case-insensitive tags
         public byte[] Nonce { get; set; } = Array.Empty<byte>();       // per-record AES-GCM nonce
         public byte[] Ciphertext { get; set; } = Array.Empty<byte>();  // encrypted password (includes tag in last 16 bytes)
         public DateTimeOffset CreatedAtUtc { get; init; } = DateTimeOffset.UtcNow;
@@ -481,6 +482,9 @@ namespace PasswordManager
         private readonly TimeSpan _idleTimeout = TimeSpan.FromMinutes(5);
         private readonly System.Threading.Timer _idleTimer;
         private readonly object _idleSync = new();
+        private readonly TimeSpan _clipboardClearDefault = TimeSpan.FromSeconds(20);
+        private TimeSpan _clipboardClearAfter;
+        private readonly System.Threading.Timer _clipboardTimer;
         private VaultData _vault;
         private readonly VaultSession _session;
 
@@ -495,6 +499,8 @@ namespace PasswordManager
             _passwordGenerator = new CryptoPasswordGenerator();
             _session = new VaultSession(_vaultPath, _vault, _store, _kdf);
             _idleTimer = new Timer(OnIdleTimeout, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+            _clipboardClearAfter = _clipboardClearDefault;
+            _clipboardTimer = new Timer(OnClipboardClear, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
 
         public void Run()
@@ -523,10 +529,12 @@ namespace PasswordManager
                         case "get": CmdGet(parts); break;
                         case "copy": CmdCopy(parts); break;
                         case "gen": CmdGen(parts); break;
-                        case "list": CmdList(); break;
+                        case "list": CmdList(parts); break;
+                        case "search": CmdSearch(parts); break;
                         case "update": CmdUpdate(parts); break;
                         case "remove": CmdRemove(parts); break;
                         case "change-master": CmdChangeMaster(); break;
+                        case "set": CmdSet(parts); break;
                         case "exit": case "quit": return;
                         default: Console.WriteLine("Unknown command. Type 'help'."); break;
                     }
@@ -621,6 +629,7 @@ namespace PasswordManager
                 {
                     _clipboard.SetText(passwordText);
                     Console.WriteLine("Password copied to clipboard.");
+                    ScheduleClipboardClear();
                 }
             }
             finally { CryptographicOperations.ZeroMemory(plaintext); }
@@ -647,6 +656,7 @@ namespace PasswordManager
                 var passwordText = Encoding.UTF8.GetString(plaintext);
                 _clipboard.SetText(passwordText);
                 Console.WriteLine("Password copied to clipboard.");
+                ScheduleClipboardClear();
             }
             finally { CryptographicOperations.ZeroMemory(plaintext); }
         }
@@ -684,18 +694,61 @@ namespace PasswordManager
             {
                 _clipboard.SetText(pwd);
                 Console.WriteLine("Generated password copied to clipboard.");
+                ScheduleClipboardClear();
             }
         }
 
-        private void CmdList()
+        private void CmdSearch(IReadOnlyList<string> args)
         {
             RequireUnlocked();
-            using var repo = CreateRepository();
-            var rows = repo.List().ToList();
-            if (rows.Count == 0) { Console.WriteLine("(empty)"); return; }
-            foreach (var c in rows)
+            if (args.Count < 2)
             {
-                Console.WriteLine($"{c.Id}  |  {c.Service}  |  {c.Username}  |  updated {c.UpdatedAtUtc:yyyy-MM-dd HH:mm}Z");
+                Console.WriteLine("Usage: search <term>");
+                return;
+            }
+            var term = string.Join(' ', args.Skip(1));
+            using var repo = CreateRepository();
+            var results = repo.List().Where(c =>
+                (!string.IsNullOrEmpty(c.Service) && c.Service.Contains(term, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrEmpty(c.Username) && c.Username.Contains(term, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrEmpty(c.Notes) && c.Notes.Contains(term, StringComparison.OrdinalIgnoreCase)) ||
+                (c.Tags != null && c.Tags.Any(t => t != null && t.Contains(term, StringComparison.OrdinalIgnoreCase)))
+            ).ToList();
+
+            if (results.Count == 0) { Console.WriteLine("No matches."); return; }
+            foreach (var c in results)
+            {
+                var tags = (c.Tags == null || c.Tags.Count == 0) ? "-" : string.Join(',', c.Tags);
+                Console.WriteLine($"{c.Id}  |  {c.Service}  |  {c.Username}  |  tags: {tags}  |  updated {c.UpdatedAtUtc:yyyy-MM-dd HH:mm}Z");
+            }
+        }
+
+        private void CmdList(IReadOnlyList<string> args)
+        {
+            RequireUnlocked();
+            string? tagFilter = null;
+            for (int i = 1; i < args.Count; i++)
+            {
+                var a = args[i];
+                if (a.Equals("--tag", StringComparison.OrdinalIgnoreCase) || a.Equals("-t", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (i + 1 >= args.Count) { Console.WriteLine("Usage: list [--tag <tag>]"); return; }
+                    tagFilter = args[++i];
+                }
+            }
+
+            using var repo = CreateRepository();
+            var rows = repo.List();
+            if (!string.IsNullOrEmpty(tagFilter))
+            {
+                rows = rows.Where(c => c.Tags != null && c.Tags.Any(t => string.Equals(t, tagFilter, StringComparison.OrdinalIgnoreCase)));
+            }
+            var list = rows.ToList();
+            if (list.Count == 0) { Console.WriteLine("(empty)"); return; }
+            foreach (var c in list)
+            {
+                var tags = (c.Tags == null || c.Tags.Count == 0) ? "-" : string.Join(',', c.Tags);
+                Console.WriteLine($"{c.Id}  |  {c.Service}  |  {c.Username}  |  tags: {tags}  |  updated {c.UpdatedAtUtc:yyyy-MM-dd HH:mm}Z");
             }
         }
 
@@ -714,6 +767,7 @@ namespace PasswordManager
                 pwd = _passwordGenerator.Generate();
                 _clipboard.SetText(pwd);
                 Console.WriteLine("Generated and copied new password to clipboard.");
+                ScheduleClipboardClear();
             }
             using var repo = CreateRepository();
             if (repo.UpdatePassword(id, pwd)) Console.WriteLine("Updated."); else Console.WriteLine("Not found.");
@@ -777,6 +831,36 @@ namespace PasswordManager
             Console.WriteLine("Master password changed. Vault locked; use 'unlock' with the new password.");
         }
 
+        private void CmdSet(IReadOnlyList<string> args)
+        {
+            if (args.Count < 3)
+            {
+                Console.WriteLine("Usage: set clipboard-timeout <seconds|off>");
+                return;
+            }
+            var key = args[1].ToLowerInvariant();
+            if (key != "clipboard-timeout") { Console.WriteLine("Unknown setting. Supported: clipboard-timeout"); return; }
+
+            var val = args[2].ToLowerInvariant();
+            if (val == "off" || val == "0")
+            {
+                _clipboardClearAfter = TimeSpan.Zero;
+                _clipboardTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+                Console.WriteLine("Clipboard auto-clear disabled.");
+            }
+            else if (int.TryParse(val, out var seconds) && seconds >= 0 && seconds <= 600)
+            {
+                _clipboardClearAfter = TimeSpan.FromSeconds(seconds);
+                Console.WriteLine($"Clipboard auto-clear set to {seconds}s.");
+                // If we recently copied, reschedule
+                ScheduleClipboardClear();
+            }
+            else
+            {
+                Console.WriteLine("Invalid seconds. Use 0..600 or 'off'.");
+            }
+        }
+
         private JsonCredentialRepository CreateRepository()
         {
             if (!_session.IsUnlocked || _session.CurrentKey == null)
@@ -790,7 +874,7 @@ namespace PasswordManager
         {
             Console.WriteLine("==============================");
             Console.WriteLine("  Password Manager (Console)");
-            Console.WriteLine("  AES-GCM | PBKDF2 | JSON Store | Auto-lock 5m");
+            Console.WriteLine("  AES-GCM | PBKDF2 | JSON Store | Auto-lock 5m | Clipboard clear 20s");
             Console.WriteLine("==============================\n");
         }
 
@@ -804,11 +888,13 @@ namespace PasswordManager
   get <service> <user> [--show]  Copy password to clipboard (default). Add --show to print
   copy <service> <user>    Explicitly copy password to clipboard
   gen [len] [flags]        Generate a password (copies by default). Flags: --show, --no-upper, --no-lower, --no-digits, --no-symbols, --allow-ambiguous
-  list                     List credentials (ids, service, username)
+  list [--tag <tag>]       List credentials (optionally filter by tag)
+  search <term>            Search service/username/notes/tags
   update <id>              Update password by credential id (leave empty to auto-generate)
   remove <id>              Remove credential by id
   change-master            Change master password (re-encrypts all)
-  exit|quit                Exit app");
+  exit|quit                Exit app
+  set clipboard-timeout <seconds|off>  Configure clipboard auto-clear (default 20s)");
         }
 
         private static string PromptHidden(string prompt)
@@ -872,6 +958,35 @@ namespace PasswordManager
         private void StopIdleTimer()
         {
             _idleTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        }
+
+        private void OnClipboardClear(object? state)
+        {
+            try
+            {
+                _clipboard.SetText(string.Empty);
+                Console.WriteLine();
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("[Clipboard] Cleared.");
+                Console.ResetColor();
+                Console.Write("pm> ");
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.DarkYellow;
+                Console.WriteLine($"[Clipboard] Failed to clear: {ex.Message}");
+                Console.ResetColor();
+            }
+        }
+
+        private void ScheduleClipboardClear()
+        {
+            if (_clipboardClearAfter <= TimeSpan.Zero)
+            {
+                _clipboardTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+                return;
+            }
+            _clipboardTimer.Change(_clipboardClearAfter, Timeout.InfiniteTimeSpan);
         }
 
         private void RequireUnlocked()
