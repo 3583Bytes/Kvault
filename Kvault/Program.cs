@@ -2,6 +2,7 @@
 // High-quality, SOLID-oriented single-file implementation
 // .NET 6+ compatible. Build with:  dotnet new console -n PasswordManager && replace Program.cs, then `dotnet run`
 
+using PasswordManager;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -309,6 +310,14 @@ namespace PasswordManager
     {
         public int ClipboardTimeoutSeconds { get; set; } = 20; // 0 to disable
         public int IdleTimeoutMinutes { get; set; } = 5;       // 0 to disable
+
+        // Password generator defaults
+        public int GeneratorLength { get; set; } = 20;         // 8..128
+        public bool GeneratorUpper { get; set; } = true;
+        public bool GeneratorLower { get; set; } = true;
+        public bool GeneratorDigits { get; set; } = true;
+        public bool GeneratorSymbols { get; set; } = true;
+        public bool GeneratorExcludeAmbiguous { get; set; } = true; // true = exclude visually similar
     }
 
     public interface IConfigStore
@@ -645,7 +654,7 @@ namespace PasswordManager
 
             if (string.IsNullOrEmpty(pwd))
             {
-                pwd = _passwordGenerator.Generate();
+                pwd = _passwordGenerator.Generate(_config.GeneratorLength, _config.GeneratorUpper, _config.GeneratorLower, _config.GeneratorDigits, _config.GeneratorSymbols, _config.GeneratorExcludeAmbiguous);
                 _clipboard.SetText(pwd);
                 Console.WriteLine("Generated a strong password and copied to clipboard.");
             }
@@ -718,9 +727,9 @@ namespace PasswordManager
 
         private void CmdGen(IReadOnlyList<string> args)
         {
-            int length = 20;
+            int length = _config.GeneratorLength;
             bool show = args.Skip(1).Any(a => a.Equals("--show", StringComparison.OrdinalIgnoreCase) || a.Equals("-s", StringComparison.OrdinalIgnoreCase));
-            bool includeUpper = true, includeLower = true, includeDigits = true, includeSymbols = true, excludeAmbiguous = true;
+            bool includeUpper = _config.GeneratorUpper, includeLower = _config.GeneratorLower, includeDigits = _config.GeneratorDigits, includeSymbols = _config.GeneratorSymbols, excludeAmbiguous = _config.GeneratorExcludeAmbiguous;
 
             foreach (var a in args.Skip(1))
             {
@@ -819,7 +828,7 @@ namespace PasswordManager
             var pwd = PromptHidden("New password (leave empty to auto-generate): ");
             if (string.IsNullOrEmpty(pwd))
             {
-                pwd = _passwordGenerator.Generate();
+                pwd = _passwordGenerator.Generate(_config.GeneratorLength, _config.GeneratorUpper, _config.GeneratorLower, _config.GeneratorDigits, _config.GeneratorSymbols, _config.GeneratorExcludeAmbiguous);
                 _clipboard.SetText(pwd);
                 Console.WriteLine("Generated and copied new password to clipboard.");
                 ScheduleClipboardClear();
@@ -890,62 +899,122 @@ namespace PasswordManager
         {
             if (args.Count < 3)
             {
-                Console.WriteLine("Usage: set <clipboard-timeout|idle-timeout> <value|off>");
+                Console.WriteLine("Usage: set <clipboard-timeout|idle-timeout|gen> <value|off|...>");
+                Console.WriteLine("Examples: set clipboard-timeout 30 | set idle-timeout 10 | set gen length 24 | set gen symbols off");
                 return;
             }
             var key = args[1].ToLowerInvariant();
-            var val = args[2].ToLowerInvariant();
 
             switch (key)
             {
                 case "clipboard-timeout":
-                    if (val == "off" || val == "0")
                     {
-                        _clipboardClearAfter = TimeSpan.Zero;
-                        _config.ClipboardTimeoutSeconds = 0;
-                        _clipboardTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
-                        Console.WriteLine("Clipboard auto-clear disabled.");
+                        var val = args[2].ToLowerInvariant();
+                        if (val == "off" || val == "0")
+                        {
+                            _clipboardClearAfter = TimeSpan.Zero;
+                            _config.ClipboardTimeoutSeconds = 0;
+                            _clipboardTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+                            Console.WriteLine("Clipboard auto-clear disabled.");
+                        }
+                        else if (int.TryParse(val, out var sec) && sec >= 0 && sec <= 600)
+                        {
+                            _clipboardClearAfter = TimeSpan.FromSeconds(sec);
+                            _config.ClipboardTimeoutSeconds = sec;
+                            Console.WriteLine($"Clipboard auto-clear set to {sec}s.");
+                            ScheduleClipboardClear();
+                        }
+                        else { Console.WriteLine("Invalid seconds. Use 0..600 or 'off'."); return; }
+                        break;
                     }
-                    else if (int.TryParse(val, out var sec) && sec >= 0 && sec <= 600)
-                    {
-                        _clipboardClearAfter = TimeSpan.FromSeconds(sec);
-                        _config.ClipboardTimeoutSeconds = sec;
-                        Console.WriteLine($"Clipboard auto-clear set to {sec}s.");
-                        ScheduleClipboardClear();
-                    }
-                    else { Console.WriteLine("Invalid seconds. Use 0..600 or 'off'."); return; }
-                    break;
 
                 case "idle-timeout":
-                    if (val == "off" || val == "0")
                     {
-                        _idleTimeout = TimeSpan.Zero;
-                        _config.IdleTimeoutMinutes = 0;
-                        StopIdleTimer();
-                        Console.WriteLine("Auto-lock disabled.");
+                        var val = args[2].ToLowerInvariant();
+                        if (val == "off" || val == "0")
+                        {
+                            _idleTimeout = TimeSpan.Zero;
+                            _config.IdleTimeoutMinutes = 0;
+                            StopIdleTimer();
+                            Console.WriteLine("Auto-lock disabled.");
+                        }
+                        else if (int.TryParse(val, out var minutes) && minutes >= 0 && minutes <= 120)
+                        {
+                            _idleTimeout = TimeSpan.FromMinutes(minutes);
+                            _config.IdleTimeoutMinutes = minutes;
+                            Console.WriteLine($"Auto-lock set to {minutes}m.");
+                            ResetIdleTimer();
+                        }
+                        else { Console.WriteLine("Invalid minutes. Use 0..120 or 'off'."); return; }
+                        break;
                     }
-                    else if (int.TryParse(val, out var minutes) && minutes >= 0 && minutes <= 120)
+
+                case "gen":
                     {
-                        _idleTimeout = TimeSpan.FromMinutes(minutes);
-                        _config.IdleTimeoutMinutes = minutes;
-                        Console.WriteLine($"Auto-lock set to {minutes}m.");
-                        ResetIdleTimer();
+                        if (args.Count < 4)
+                        {
+                            Console.WriteLine("Usage: set gen <length|upper|lower|digits|symbols|ambiguous> <value>");
+                            Console.WriteLine("Examples: set gen length 24 | set gen symbols off | set gen ambiguous allow");
+                            return;
+                        }
+                        var sub = args[2].ToLowerInvariant();
+                        var val = args[3].ToLowerInvariant();
+                        switch (sub)
+                        {
+                            case "length":
+                                if (int.TryParse(val, out var n) && n >= 8 && n <= 128)
+                                { _config.GeneratorLength = n; Console.WriteLine($"Generator length set to {n}."); }
+                                else { Console.WriteLine("Length must be 8..128."); return; }
+                                break;
+                            case "upper":
+                                if (TryParseOnOff(val, out var u)) { _config.GeneratorUpper = u; Console.WriteLine($"Generator upper: {(u ? "on" : "off")}."); }
+                                else { Console.WriteLine("Use on|off."); return; }
+                                break;
+                            case "lower":
+                                if (TryParseOnOff(val, out var l)) { _config.GeneratorLower = l; Console.WriteLine($"Generator lower: {(l ? "on" : "off")}."); }
+                                else { Console.WriteLine("Use on|off."); return; }
+                                break;
+                            case "digits":
+                                if (TryParseOnOff(val, out var d)) { _config.GeneratorDigits = d; Console.WriteLine($"Generator digits: {(d ? "on" : "off")}."); }
+                                else { Console.WriteLine("Use on|off."); return; }
+                                break;
+                            case "symbols":
+                                if (TryParseOnOff(val, out var s)) { _config.GeneratorSymbols = s; Console.WriteLine($"Generator symbols: {(s ? "on" : "off")}."); }
+                                else { Console.WriteLine("Use on|off."); return; }
+                                break;
+                            case "ambiguous":
+                                if (val is "allow" or "on" or "true" or "1") { _config.GeneratorExcludeAmbiguous = false; Console.WriteLine("Generator ambiguous: allow."); }
+                                else if (val is "deny" or "off" or "false" or "0") { _config.GeneratorExcludeAmbiguous = true; Console.WriteLine("Generator ambiguous: deny."); }
+                                else { Console.WriteLine("Use allow|deny or on|off."); return; }
+                                break;
+                            default:
+                                Console.WriteLine("Unknown gen setting. Use length|upper|lower|digits|symbols|ambiguous");
+                                return;
+                        }
+                        break;
                     }
-                    else { Console.WriteLine("Invalid minutes. Use 0..120 or 'off'."); return; }
-                    break;
 
                 default:
-                    Console.WriteLine("Unknown setting. Supported: clipboard-timeout, idle-timeout");
+                    Console.WriteLine("Unknown setting. Supported: clipboard-timeout, idle-timeout, gen");
                     return;
             }
 
-            // Persist config
             try { _configStore.Save(_configPath, _config); }
             catch (Exception ex)
             {
                 Console.ForegroundColor = ConsoleColor.DarkYellow;
                 Console.WriteLine($"Warning: failed to save config: {ex.Message}");
                 Console.ResetColor();
+            }
+        }
+
+        private static bool TryParseOnOff(string val, out bool result)
+        {
+            switch (val)
+            {
+                case "on": case "true": case "1": result = true; return true;
+                case "off": case "false": case "0": result = false; return true;
+                default: result = false; return false;
             }
         }
 
@@ -985,6 +1054,7 @@ namespace PasswordManager
   change-master            Change master password (re-encrypts all)
   set clipboard-timeout <seconds|off>  Configure clipboard auto-clear (persisted)
   set idle-timeout <minutes|off>       Configure auto-lock timeout (persisted)
+  set gen <opt> <val>                  Persist generator defaults (length|upper|lower|digits|symbols|ambiguous)
   exit|quit                Exit app");
         }
 
