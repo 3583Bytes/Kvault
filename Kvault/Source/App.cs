@@ -75,7 +75,7 @@ public sealed class App
                         case "change-master": CmdChangeMaster(); break;
                         case "set": CmdSet(parts); break;
                         case "tag": CmdTag(parts); break;
-                        case "exit": case "quit": return;
+                        case "exit": case "quit": case "bye": return;
                         default: Console.WriteLine("Unknown command. Type 'help'."); break;
                     }
                 }
@@ -528,35 +528,44 @@ public sealed class App
 
         private void WriteHeader()
         {
-            Console.WriteLine("==============================");
+            Console.WriteLine("================================================================================");
             Console.WriteLine("  Kvault Password Manager  ");
             var autoStr = _idleTimeout > TimeSpan.Zero ? $"Auto-lock {_idleTimeout.TotalMinutes:0}m" : "Auto-lock off";
             var clipStr = _clipboardClearAfter > TimeSpan.Zero ? $"Clipboard clear {_clipboardClearAfter.TotalSeconds:0}s" : "Clipboard clear off";
             Console.WriteLine($"  AES-GCM | PBKDF2 | JSON Store | {autoStr} | {clipStr}");
-            Console.WriteLine("==============================");
+            Console.WriteLine("================================================================================");
         }
 
         private static void PrintHelp()
         {
             Console.WriteLine(@"Commands:
   help                                 Show this help
+  
   unlock                               Unlock the vault
   lock                                 Lock the vault
-  add <service> <user> [notes]         Add a credential (leave password empty to auto-generate)
-  get <service> <user> [--show]        Copy password to clipboard (default). Add --show to print
+  
+  list [--tag <tag>]                   List passwords (optionally filter by tag)
+  add <service> <user> [notes]         Add a password (leave password empty 
+                                       to auto-generate)
+  get <service> <user> [--show]        Copy password to clipboard (default). 
+                                       Add --show to print
   copy <service> <user>                Explicitly copy password to clipboard
   gen [len] [flags]                    Generate a password (copies by default). 
-                                       Flags: --show, --no-upper, --no-lower, --no-digits, --no-symbols, --allow-ambiguous
-  list [--tag <tag>]                   List credentials (optionally filter by tag)
+                                       Flags: --show, --no-upper, --no-lower, 
+                                       --no-digits, --no-symbols, 
+                                       --allow-ambiguous
   search <term>                        Search service/username/notes/tags
-  update <id>                          Update password by credential id (leave empty to auto-generate)
+  update <id>                          Update password by credential id 
+                                       (leave empty to auto-generate)
   remove <id>                          Remove credential by id
+
   tag <id> add <tag>                   Add one tag to a credential
   change-master                        Change master password (re-encrypts all)
-  set clipboard-timeout <seconds|off>  Configure clipboard auto-clear (persisted)
-  set idle-timeout <minutes|off>       Configure auto-lock timeout (persisted)
-  set gen <opt> <val>                  Persist generator defaults (length|upper|lower|digits|symbols|ambiguous)
-  exit|quit                            Exit app");
+  
+  set clipboard-timeout <seconds|off>  Configure clipboard auto-clear
+  set idle-timeout <minutes|off>       Configure auto-lock timeout
+  
+  exit|quit|bye                        Exit app");
         }
 
         private static string PromptHidden(string prompt)
