@@ -43,14 +43,8 @@ sudo apt-get install xsel
 ## 🚀 Quick Start
 
 ```bash
-# 1) Create a new console project
-dotnet new console -n PasswordManager
-
-# 2) Replace Program.cs with the provided Program.cs from this repo
-#    (This project is intentionally single-file for easy review.)
-
-# 3) Build & run
-dotnet run --project PasswordManager
+# 1) Build & run
+dotnet run --project Kvault
 ```
 
 On first run, the app will create a `data/` folder next to the executable, including:
