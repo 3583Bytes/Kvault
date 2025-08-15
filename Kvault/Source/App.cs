@@ -3,7 +3,8 @@ using System.Text;
 
 namespace KVault
 {
-public sealed class App
+   
+    public sealed class App
     {
         private readonly string _vaultPath;
         private readonly string _configPath;
@@ -22,6 +23,10 @@ public sealed class App
         private readonly System.Threading.Timer _clipboardTimer;
         private VaultData _vault;
         private readonly VaultSession _session;
+
+        /// <summary>
+        /// Wires up services, loads vault and config, and initializes timers.
+        /// </summary>
 
         public App(string vaultPath, string configPath)
         {
@@ -42,6 +47,9 @@ public sealed class App
             _clipboardTimer = new Timer(OnClipboardClear, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
 
+        /// <summary>
+        /// Application entry for the REPL loop. Parses commands and dispatches handlers.
+        /// </summary>
         public void Run()
         {
             this.WriteHeader();
@@ -88,6 +96,9 @@ public sealed class App
             }
         }
 
+        /// <summary>
+        /// Ensures the vault has a master password set; prompts to initialize if not present.
+        /// </summary>
         private void EnsureInitialized()
         {
             if (_vault.Metadata.VerificationHmac is { Length: > 0 }) return;
@@ -99,6 +110,9 @@ public sealed class App
             Console.WriteLine("Vault initialized. Use 'unlock' to begin.");
         }
 
+        /// <summary>
+        /// Unlocks the vault by deriving the master key from the provided password.
+        /// </summary>
         private void CmdUnlock()
         {
             if (_session.IsUnlocked) { Console.WriteLine("Already unlocked."); return; }
@@ -108,6 +122,9 @@ public sealed class App
             Console.WriteLine("Unlocked.");
         }
 
+        /// <summary>
+        /// Locks the vault and stops the idle timer.
+        /// </summary>
         private void CmdLock()
         {
             StopIdleTimer();
@@ -115,7 +132,9 @@ public sealed class App
             Console.WriteLine("Locked.");
         }
 
-
+        /// <summary>
+        /// Adds a credential; will auto-generate a password if input is empty.
+        /// </summary>
         private void CmdAdd(IReadOnlyList<string> args)
         {
             RequireUnlocked();
@@ -141,6 +160,9 @@ public sealed class App
             Console.WriteLine($"Added: {cred.Id} ({cred.Service}/{cred.Username})");
         }
 
+        /// <summary>
+        /// Adds a tag to credential's entry; requires the credential ID and "add" action.
+        /// </summary>
         private void CmdTag(IReadOnlyList<string> args)
         {
             RequireUnlocked();
@@ -163,6 +185,9 @@ public sealed class App
             Console.WriteLine(repo.AddTags(id, toAdd) ? "Tags added." : "Not found.");
         }
 
+        // <summary>
+        /// Retrieves a credential's password; copies to clipboard by default or prints with --show.
+        /// </summary>
         private void CmdGet(IReadOnlyList<string> args)
         {
             RequireUnlocked();
@@ -198,6 +223,9 @@ public sealed class App
             finally { CryptographicOperations.ZeroMemory(plaintext); }
         }
 
+        /// <summary>
+        /// Copies a credential's password to the clipboard.
+        /// </summary>
         private void CmdCopy(IReadOnlyList<string> args)
         {
             RequireUnlocked();
@@ -224,6 +252,9 @@ public sealed class App
             finally { CryptographicOperations.ZeroMemory(plaintext); }
         }
 
+        /// <summary>
+        /// Generates a password using defaults (overridable by flags); copies unless --show.
+        /// </summary>
         private void CmdGen(IReadOnlyList<string> args)
         {
             int length = _config.GeneratorLength;
@@ -261,6 +292,9 @@ public sealed class App
             }
         }
 
+        /// <summary>
+        /// Case-insensitive search over service, username, notes, and tags.
+        /// </summary>
         private void CmdSearch(IReadOnlyList<string> args)
         {
             RequireUnlocked();
@@ -286,6 +320,59 @@ public sealed class App
             }
         }
 
+        /// <summary>
+        /// Tags credentials; can filter by an exact tag (case-insensitive).
+        /// </summary>
+        /// <summary>
+        /// Adds, removes, sets, or lists tags for a credential.
+        /// Usage:
+        ///   tag <id> list
+        ///   tag <id> add <tags...>
+        ///   tag <id> remove <tags...>
+        ///   tag <id> set <tags...>
+        /// Tags may be comma- or space-separated. Case-insensitive; stored in lowercase.
+        /// </summary>
+        private void CmdTags(IReadOnlyList<string> args)
+        {
+            RequireUnlocked();
+            if (args.Count < 3)
+            {
+                Console.WriteLine("Usage: tag <id> <list|add|remove|set> [tags...]");
+                return;
+            }
+            if (!Guid.TryParse(args[1], out var id)) { Console.WriteLine("Invalid id."); return; }
+            var action = args[2].ToLowerInvariant();
+
+            using var repo = CreateRepository();
+
+            if (action == "list")
+            {
+                var cred = repo.List().FirstOrDefault(c => c.Id == id);
+                if (cred == null) { Console.WriteLine("Not found."); return; }
+                var tags = (cred.Tags == null || cred.Tags.Count == 0) ? "-" : string.Join(',', cred.Tags);
+                Console.WriteLine($"Tags: {tags}");
+                return;
+            }
+
+            if (args.Count < 4) { Console.WriteLine("Specify tags (comma or space separated)."); return; }
+            var tokens = string.Join(' ', args.Skip(3))
+                .Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(t => t.ToLowerInvariant());
+
+            bool ok = action switch
+            {
+                "add" => repo.AddTags(id, tokens),
+                "remove" => repo.RemoveTags(id, tokens),
+                "set" => repo.SetTags(id, tokens),
+                _ => false
+            };
+
+            Console.WriteLine(ok ? "Tags updated." : "Not found.");
+        }
+
+        /// <summary>
+        /// List credentials stored in vault
+        /// </summary>
         private void CmdList(IReadOnlyList<string> args)
         {
             RequireUnlocked();
@@ -315,6 +402,9 @@ public sealed class App
             }
         }
 
+        /// <summary>
+        /// Updates the password for a credential (auto-generates if input empty).
+        /// </summary>
         private void CmdUpdate(IReadOnlyList<string> args)
         {
             RequireUnlocked();
@@ -336,6 +426,9 @@ public sealed class App
             if (repo.UpdatePassword(id, pwd)) Console.WriteLine("Updated."); else Console.WriteLine("Not found.");
         }
 
+        /// <summary>
+        /// Deletes a credential by id after a confirmation prompt.
+        /// </summary>
         private void CmdRemove(IReadOnlyList<string> args)
         {
             RequireUnlocked();
@@ -356,6 +449,9 @@ public sealed class App
             else Console.WriteLine("Cancelled.");
         }
 
+        /// <summary>
+        /// Changes the master password by re-encrypting all records with a new key and salt.
+        /// </summary>
         private void CmdChangeMaster()
         {
             RequireUnlocked();
@@ -394,6 +490,9 @@ public sealed class App
             Console.WriteLine("Master password changed. Vault locked; use 'unlock' with the new password.");
         }
 
+        /// <summary>
+        /// Adjusts runtime settings and persists them to config.json.
+        /// </summary>
         private void CmdSet(IReadOnlyList<string> args)
         {
             if (args.Count < 3)
@@ -507,6 +606,9 @@ public sealed class App
             }
         }
 
+        /// <summary>
+        /// Parses common on/off tokens into a boolean (on/true/1 vs off/false/0).
+        /// </summary>
         private static bool TryParseOnOff(string val, out bool result)
         {
             switch (val)
@@ -517,6 +619,9 @@ public sealed class App
             }
         }
 
+        /// <summary>
+        /// Reloads the vault from disk and returns a repository bound to the current master key.
+        /// </summary>
         private JsonCredentialRepository CreateRepository()
         {
             if (!_session.IsUnlocked || _session.CurrentKey == null)
@@ -526,6 +631,9 @@ public sealed class App
             return new JsonCredentialRepository(_vaultPath, _vault, _store, _enc, _session.CurrentKey);
         }
 
+        /// <summary>
+        /// Prints the banner header with current runtime settings.
+        /// </summary>
         private void WriteHeader()
         {
             Console.WriteLine("================================================================================");
@@ -536,6 +644,9 @@ public sealed class App
             Console.WriteLine("================================================================================");
         }
 
+        /// <summary>
+        /// Displays the command help.
+        /// </summary>
         private static void PrintHelp()
         {
             Console.WriteLine(@"Commands:
@@ -568,6 +679,9 @@ public sealed class App
   exit|quit|bye                        Exit app");
         }
 
+        /// <summary>
+        /// Reads a line from the console while echoing asterisks instead of the typed characters.
+        /// </summary>
         private static string PromptHidden(string prompt)
         {
             Console.Write(prompt);
@@ -585,6 +699,9 @@ public sealed class App
             return sb.ToString();
         }
 
+        /// <summary>
+        /// Splits a command line into arguments with support for quoted segments.
+        /// </summary>
         private static string[] SplitArgs(string input)
         {
             // naive splitter that supports quoted segments
@@ -604,6 +721,9 @@ public sealed class App
             return args.ToArray();
         }
 
+        /// <summary>
+        /// Timer callback that auto-locks the vault after the configured idle timeout.
+        /// </summary>
         private void OnIdleTimeout(object? state)
         {
             lock (_idleSync)
@@ -618,6 +738,9 @@ public sealed class App
             }
         }
 
+        /// <summary>
+        /// Resets the idle auto-lock timer when user activity occurs.
+        /// </summary>
         private void ResetIdleTimer()
         {
             if (_session.IsUnlocked && _idleTimeout > TimeSpan.Zero)
@@ -626,11 +749,17 @@ public sealed class App
                 _idleTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
 
+        /// <summary>
+        /// Stops the idle auto-lock timer.
+        /// </summary>
         private void StopIdleTimer()
         {
             _idleTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
 
+        /// <summary>
+        /// Timer callback that clears the OS clipboard, if enabled.
+        /// </summary>
         private void OnClipboardClear(object? state)
         {
             try
@@ -650,6 +779,9 @@ public sealed class App
             }
         }
 
+        /// <summary>
+        /// (Re)schedules the clipboard clearing timer according to the configured timeout.
+        /// </summary>
         private void ScheduleClipboardClear()
         {
             if (_clipboardClearAfter <= TimeSpan.Zero)
@@ -660,6 +792,9 @@ public sealed class App
             _clipboardTimer.Change(_clipboardClearAfter, Timeout.InfiniteTimeSpan);
         }
 
+        /// <summary>
+        /// Throws if the vault is currently locked.
+        /// </summary>
         private void RequireUnlocked()
         {
             if (!_session.IsUnlocked || _session.CurrentKey == null)

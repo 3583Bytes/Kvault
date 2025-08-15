@@ -5,6 +5,9 @@ namespace KVault
 {
     public sealed class CrossPlatformClipboardService : IClipboardService
     {
+        /// <summary>
+        /// Copies <paramref name="text"/> to the OS clipboard using platform-native tools.
+        /// </summary>
         public void SetText(string text)
         {
             if (string.IsNullOrEmpty(text)) return;
@@ -30,6 +33,10 @@ namespace KVault
             throw new PlatformNotSupportedException("Clipboard unsupported on this platform.");
         }
 
+        /// <summary>
+        /// Spawns a hidden process and pipes <paramref name="input"/> to its STDIN.
+        /// Throws if the process exits non-zero.
+        /// </summary>
         private static void RunPipe(string fileName, string? arguments, string input)
         {
             var psi = new ProcessStartInfo

@@ -11,7 +11,9 @@ namespace KVault
             WriteIndented = true,
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
-
+        /// <summary>
+        /// Loads an existing vault from <paramref name="path"/> or creates a new one with fresh KDF salt.
+        /// </summary>
         public VaultData LoadOrCreate(string path)
         {
             if (!File.Exists(path))
@@ -33,7 +35,9 @@ namespace KVault
             var dataLoaded = JsonSerializer.Deserialize<VaultData>(fs, _jsonOptions) ?? new VaultData();
             return dataLoaded;
         }
-
+        /// <summary>
+        /// Atomically saves the vault to disk (via temp file + replace), writing a .bak backup when overwriting.
+        /// </summary>
         public void Save(string path, VaultData data)
         {
             var directory = Path.GetDirectoryName(path);

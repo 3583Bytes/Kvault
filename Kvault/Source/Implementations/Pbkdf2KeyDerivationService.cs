@@ -4,6 +4,9 @@ namespace KVault
 {
     public sealed class Pbkdf2KeyDerivationService : IKeyDerivationService
     {
+        /// <summary>
+        /// Derives a 64-byte key using PBKDF2-SHA256 and splits it into 32B AES and 32B HMAC keys.
+        /// </summary>
         public MasterKey DeriveKey(string masterPassword, byte[] salt, int iterations)
         {
             using var kdf = new Rfc2898DeriveBytes(masterPassword, salt, iterations, HashAlgorithmName.SHA256);

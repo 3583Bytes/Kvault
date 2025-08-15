@@ -11,6 +11,9 @@ namespace KVault
         private const string Symbols = "!@#$%^&*()-_=+[]{};:,.?/";
         private const string Ambiguous = "Il1O0|`'\"~<>\\/";
 
+        /// <summary>
+        /// Generates a cryptographically-strong password with unbiased selection and class guarantees.
+        /// </summary>
         public string Generate(int length = 20, bool includeUpper = true, bool includeLower = true, bool includeDigits = true, bool includeSymbols = true, bool excludeAmbiguous = true)
         {
             if (length < 8) length = 8;
@@ -45,6 +48,9 @@ namespace KVault
             return new string(chars);
         }
 
+        /// <summary>
+        /// Fisher–Yates shuffle using crypto-random indices.
+        /// </summary>
         private static void Shuffle(char[] array)
         {
             for (int i = array.Length - 1; i > 0; i--)
@@ -54,6 +60,9 @@ namespace KVault
             }
         }
 
+        /// <summary>
+        /// Returns a uniform random integer in [0, <paramref name="maxExclusive"/>), via rejection sampling.
+        /// </summary>
         private static int NextInt32(int maxExclusive)
         {
             if (maxExclusive <= 0) throw new ArgumentOutOfRangeException(nameof(maxExclusive));
