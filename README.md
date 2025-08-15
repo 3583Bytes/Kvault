@@ -61,23 +61,33 @@ You’ll be prompted to **create a master password**. After that, use `unlock` t
 Type `help` in the REPL to see all commands:
 
 ```
-help                     Show this help
-unlock                   Unlock the vault
-lock                     Lock the vault
-add <service> <user> [notes] [--tags t1,t2]   Add a credential (leave password empty to auto-generate)
-get <service> <user> [--show]  Copy password to clipboard (default). Add --show to print
-copy <service> <user>    Explicitly copy password to clipboard
-gen [len] [flags]        Generate a password (copies by default). Flags: --show, --no-upper, --no-lower, --no-digits, --no-symbols, --allow-ambiguous
-list [--tag <tag>]       List credentials (optionally filter by tag)
-search <term>            Search service/username/notes/tags
-tag <id> <list|add|remove|set> [tags...]   Manage tags on a credential
-update <id>              Update password by credential id (leave empty to auto-generate)
-remove <id>              Remove credential by id
-change-master            Change master password (re-encrypts all)
-set clipboard-timeout <seconds|off>  Configure clipboard auto-clear (persisted)
-set idle-timeout <minutes|off>       Configure auto-lock timeout (persisted)
-set gen <opt> <val>                  Persist generator defaults (length|upper|lower|digits|symbols|ambiguous)
-exit|quit                Exit app
+ help                                 Show this help
+
+  unlock                               Unlock the vault
+  lock                                 Lock the vault
+
+  list [--tag <tag>]                   List passwords (optionally filter by tag)
+  add <service> <user> [notes]         Add a password (leave password empty
+                                       to auto-generate)
+  get <service> <user> [--show]        Copy password to clipboard (default).
+                                       Add --show to print
+  copy <service> <user>                Explicitly copy password to clipboard
+  gen [len] [flags]                    Generate a password (copies by default).
+                                       Flags: --show, --no-upper, --no-lower,
+                                       --no-digits, --no-symbols,
+                                       --allow-ambiguous
+  search <term>                        Search service/username/notes/tags
+  update <id>                          Update password by credential id
+                                       (leave empty to auto-generate)
+  remove <id>                          Remove credential by id
+
+  tag <id> add <tag>                   Add one tag to a credential
+  change-master                        Change master password (re-encrypts all)
+
+  set clipboard-timeout <seconds|off>  Configure clipboard auto-clear
+  set idle-timeout <minutes|off>       Configure auto-lock timeout
+
+  exit|quit|bye                        Exit app
 ```
 
 ### Common flows
@@ -214,7 +224,7 @@ Swap implementations or add new ones without touching call sites (e.g., add `Arg
 
 ## 📄 License
 
-Choose a license for your repository (e.g., MIT). Add a `LICENSE` file.
+MIT
 
 ---
 
