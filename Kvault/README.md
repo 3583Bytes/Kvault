@@ -1,6 +1,6 @@
-﻿#Kvault
+﻿# Kvault
 
-##Description
+## Description
 
 Kvault (Key Vault) is console application written in C# that implements a password manager. The program uses a JSON store to persist data and provides a simple command-line interface for managing credentials.
 
@@ -14,7 +14,7 @@ Kvault (Key Vault) is console application written in C# that implements a passwo
 
 - User Interface: The console application displays a simple text-based interface to perform various operations, such as adding or removing credentials, generating passwords, listing all available credentials, searching by service/username/notes/tags, updating password for specific credential IDs, changing the master password, and setting configuration options like clipboard timeout and idle timeout.
 
-##Commands:
+## Commands:
 
   **help**                                 Show this help
   
@@ -35,7 +35,6 @@ Kvault (Key Vault) is console application written in C# that implements a passwo
   **update <id>**                          Update password by credential id 
                                        (leave empty to auto-generate)
   **remove <id>**                          Remove credential by id
-
   **tag <id> add <tag>**                  Add one tag to a credential
   **change-master**                      Change master password (re-encrypts all)
   
