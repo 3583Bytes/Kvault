@@ -168,22 +168,6 @@ set gen ambiguous allow      # include look‑alike chars
 
 ---
 
-## 🗃️ Data & Layout
-
-```
-/your-app-root
- ├─ data/
- │   ├─ vault.json        # encrypted credentials (JSON)
- │   ├─ vault.json.bak    # previous backup (atomic replace)
- │   └─ config.json       # persisted settings
- └─ Program.cs            # the application (single file)
-```
-
-- **Atomic save**: writes to `vault.json.tmp` and replaces, producing `vault.json.bak`.
-- **Per‑record encryption**: every credential has its own nonce + ciphertext (with tag appended).
-
----
-
 ## 🔐 Security Notes
 
 - **AEAD**: AES‑GCM with 12‑byte random nonces. AAD is `"<service>\u0001<username>"`, binding ciphertext to metadata.
