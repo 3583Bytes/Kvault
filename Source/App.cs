@@ -76,8 +76,8 @@ namespace KVault
                         case "get": CmdGet(parts); break;
                         case "copy": CmdCopy(parts); break;
                         case "gen": CmdGen(parts); break;
-                        case "list": CmdList(parts); break;
-                        case "ls": CmdList(parts); break;
+                        case "list": CmdListTiles(parts); break;
+                        case "ls": CmdListTiles(parts); break;
                         case "search": CmdSearch(parts); break;
                         case "update": CmdUpdate(parts); break;
                         case "remove": CmdRemove(parts); break;
@@ -402,6 +402,130 @@ namespace KVault
                 Console.WriteLine($"{c.Id}  |  {c.Service}  |  {c.Username}  |  tags: {tags}  |  updated {c.UpdatedAtUtc:yyyy-MM-dd HH:mm}Z");
             }
         }
+
+        /// <summary>
+        /// List credentials stored in vault
+        /// </summary>
+
+        private void CmdListTiles(IReadOnlyList<string> args)
+        {
+            RequireUnlocked();
+
+            // parse optional tag filter (unchanged)
+            string? tagFilter = null;
+            for (int i = 1; i < args.Count; i++)
+            {
+                var a = args[i];
+                if (a.Equals("--tag", StringComparison.OrdinalIgnoreCase) || a.Equals("-t", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (i + 1 >= args.Count) { Console.WriteLine("Usage: list [--tag <tag>]"); return; }
+                    tagFilter = args[++i];
+                }
+            }
+
+            using var repo = CreateRepository();
+            var rows = repo.List();
+            if (!string.IsNullOrEmpty(tagFilter))
+            {
+                rows = rows.Where(c => c.Tags != null && c.Tags.Any(t => string.Equals(t, tagFilter, StringComparison.OrdinalIgnoreCase)));
+            }
+            var list = rows.ToList();
+            if (list.Count == 0) { Console.WriteLine("(empty)"); return; }
+
+            int width = GetSafeWindowWidth();
+            int labelW = 10; // label column width
+            string sep = new string('─', Math.Min(width, 120));
+
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine($"Credentials ({list.Count})");
+            Console.ResetColor();
+            Console.WriteLine(sep);
+
+            foreach (var c in list)
+            {
+                var tags = (c.Tags == null || c.Tags.Count == 0) ? "-" : string.Join(',', c.Tags);
+
+                PrintField("ID", c.Id.ToString(), labelW, width, ConsoleColor.Yellow);
+                PrintField("Service", c.Service, labelW, width, ConsoleColor.Cyan);
+                PrintField("Username", c.Username, labelW, width, ConsoleColor.White);
+                PrintField("Tags", tags, labelW, width, ConsoleColor.Green);
+                PrintField("Updated", c.UpdatedAtUtc.ToLocalTime()
+                                                       .ToString("yyyy-MM-dd HH:mm"), labelW, width, ConsoleColor.DarkGray);
+                if (!string.IsNullOrWhiteSpace(c.Notes))
+                    PrintField("Notes", c.Notes!, labelW, width, ConsoleColor.Gray);
+
+                Console.WriteLine(sep);
+            }
+
+            static void PrintField(string label, string? value, int labelW, int totalWidth, ConsoleColor valueColor)
+            {
+                value ??= "-";
+                int max = Math.Max(20, totalWidth - labelW - 3); // space for value, respecting label column
+                var lines = Wrap(value, max);
+
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.Write(label.PadRight(labelW));
+                Console.ResetColor();
+                Console.ForegroundColor = valueColor;
+                Console.WriteLine(" " + lines[0]);
+                Console.ResetColor();
+
+                for (int i = 1; i < lines.Count; i++)
+                {
+                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                    Console.Write(new string(' ', labelW));
+                    Console.ResetColor();
+                    Console.ForegroundColor = valueColor;
+                    Console.WriteLine(" " + lines[i]);
+                    Console.ResetColor();
+                }
+            }
+
+            static List<string> Wrap(string text, int maxWidth)
+            {
+                // Simple word-wrapping without truncation
+                var words = text.Split(' ', StringSplitOptions.None);
+                var lines = new List<string>();
+                var sb = new StringBuilder();
+
+                foreach (var w in words)
+                {
+                    // if a single word is longer than maxWidth, hard-split it
+                    if (w.Length > maxWidth)
+                    {
+                        if (sb.Length > 0) { lines.Add(sb.ToString()); sb.Clear(); }
+                        int idx = 0;
+                        while (idx < w.Length)
+                        {
+                            int take = Math.Min(maxWidth, w.Length - idx);
+                            lines.Add(w.Substring(idx, take));
+                            idx += take;
+                        }
+                        continue;
+                    }
+
+                    int addLen = (sb.Length == 0 ? 0 : 1) + w.Length;
+                    if (sb.Length + addLen > maxWidth)
+                    {
+                        lines.Add(sb.ToString());
+                        sb.Clear();
+                    }
+                    if (sb.Length > 0) sb.Append(' ');
+                    sb.Append(w);
+                }
+
+                if (sb.Length > 0) lines.Add(sb.ToString());
+                if (lines.Count == 0) lines.Add(string.Empty);
+                return lines;
+            }
+
+            static int GetSafeWindowWidth()
+            {
+                try { return Console.WindowWidth; }
+                catch { return 100; } // Fallback for redirected output / non-TTY
+            }
+        }
+
 
         /// <summary>
         /// Updates the password for a credential (auto-generates if input empty).
