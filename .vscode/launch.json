@@ -8,7 +8,7 @@
             "name": "C#: Kvault Debug",
             "type": "dotnet",
             "request": "launch",
-            "projectPath": "${workspaceFolder}/Kvault.csproj",
+            "projectPath": "${workspaceFolder}/kvault.csproj",
         }
     ]
 }

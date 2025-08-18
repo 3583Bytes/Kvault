@@ -2,7 +2,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kvault", "Kvault.csproj", "{57EB33EA-8083-F82B-8E4F-09E32BD9A3CE}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "kvault", "kvault.csproj", "{57EB33EA-8083-F82B-8E4F-09E32BD9A3CE}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -19,6 +19,6 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {A8ACB6D3-502B-44D3-9B5B-0A7B890B7F6C}
+		SolutionGuid = {D36F820A-0DC4-4308-9A61-ADCB151C9FE0}
 	EndGlobalSection
 EndGlobal

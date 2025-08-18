@@ -3,7 +3,7 @@ using System.Text;
 
 namespace KVault
 {
-   
+
     public sealed class App
     {
         private readonly string _vaultPath;
@@ -77,6 +77,7 @@ namespace KVault
                         case "copy": CmdCopy(parts); break;
                         case "gen": CmdGen(parts); break;
                         case "list": CmdList(parts); break;
+                        case "ls": CmdList(parts); break;
                         case "search": CmdSearch(parts); break;
                         case "update": CmdUpdate(parts); break;
                         case "remove": CmdRemove(parts); break;
