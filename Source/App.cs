@@ -120,7 +120,10 @@ namespace KVault
             var master = PromptHidden("Master password: ");
             _session.Unlock(master);
             ResetIdleTimer();
+
+            Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine("Unlocked.");
+            Console.ResetColor();
         }
 
         /// <summary>
@@ -130,7 +133,9 @@ namespace KVault
         {
             StopIdleTimer();
             _session.Lock();
+            Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine("Locked.");
+            Console.ResetColor();
         }
 
         /// <summary>
@@ -158,7 +163,10 @@ namespace KVault
 
             using var repo = CreateRepository();
             var cred = repo.Add(service, username, notes, pwd);
+
+            Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine($"Added: {cred.Id} ({cred.Service}/{cred.Username})");
+            Console.ResetColor();
         }
 
         /// <summary>
@@ -183,7 +191,9 @@ namespace KVault
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
             using var repo = CreateRepository();
+            Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine(repo.AddTags(id, toAdd) ? "Tags added." : "Not found.");
+            Console.ResetColor();
         }
 
         // <summary>
@@ -217,7 +227,9 @@ namespace KVault
                 else
                 {
                     _clipboard.SetText(passwordText);
+                    Console.ForegroundColor = ConsoleColor.Green;
                     Console.WriteLine("Password copied to clipboard.");
+                    Console.ResetColor();
                     ScheduleClipboardClear();
                 }
             }
@@ -247,7 +259,9 @@ namespace KVault
             {
                 var passwordText = Encoding.UTF8.GetString(plaintext);
                 _clipboard.SetText(passwordText);
+                Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine("Password copied to clipboard.");
+                Console.ResetColor();
                 ScheduleClipboardClear();
             }
             finally { CryptographicOperations.ZeroMemory(plaintext); }
@@ -283,12 +297,16 @@ namespace KVault
             var pwd = _passwordGenerator.Generate(length, includeUpper, includeLower, includeDigits, includeSymbols, excludeAmbiguous);
             if (show)
             {
+                Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine($"Generated: {pwd}");
+                Console.ResetColor();
             }
             else
             {
                 _clipboard.SetText(pwd);
+                Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine("Generated password copied to clipboard.");
+                Console.ResetColor();
                 ScheduleClipboardClear();
             }
         }
@@ -745,16 +763,72 @@ namespace KVault
         }
 
         /// <summary>
-        /// Prints the banner header with current runtime settings.
+        /// Prints the banner header with current runtime settings (pretty, colored).
         /// </summary>
         private void WriteHeader()
         {
-            Console.WriteLine("================================================================================");
-            Console.WriteLine("  Kvault Password Manager  ");
-            var autoStr = _idleTimeout > TimeSpan.Zero ? $"Auto-lock {_idleTimeout.TotalMinutes:0}m" : "Auto-lock off";
+            int width = GetSafeWindowWidth();
+            int ruleWidth = Math.Clamp(width - 2, 60, 100); // keep it nice even on very wide consoles
+            string rule = new string('═', ruleWidth);
+
+            // top rule
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine(rule);
+            Console.ResetColor();
+
+            // centered title
+            var title = "Kvault Password Manager";
+            int pad = Math.Max(0, (ruleWidth - title.Length) / 2);
+            Console.Write(new string(' ', pad));
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine(title);
+            Console.ResetColor();
+
+            // sub rule
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine(rule);
+            Console.ResetColor();
+
+            // “badges” line
+            WriteBadge("AES‑GCM", ConsoleColor.Cyan);
+            Console.Write("  ");
+            WriteBadge("PBKDF2", ConsoleColor.Cyan);
+            Console.Write("  ");
+            WriteBadge("JSON Store", ConsoleColor.Cyan);
+            Console.WriteLine();
+
+            // settings line(s)
+            var autoStr = _idleTimeout > TimeSpan.Zero ? $"Auto‑lock {_idleTimeout.TotalMinutes:0}m" : "Auto‑lock off";
             var clipStr = _clipboardClearAfter > TimeSpan.Zero ? $"Clipboard clear {_clipboardClearAfter.TotalSeconds:0}s" : "Clipboard clear off";
-            Console.WriteLine($"  AES-GCM | PBKDF2 | JSON Store | {autoStr} | {clipStr}");
-            Console.WriteLine("================================================================================");
+
+            WriteKvp("Auto‑lock", autoStr, _idleTimeout > TimeSpan.Zero ? ConsoleColor.Yellow : ConsoleColor.DarkYellow);
+            WriteKvp("Clipboard", clipStr, _clipboardClearAfter > TimeSpan.Zero ? ConsoleColor.Yellow : ConsoleColor.DarkYellow);
+            Console.WriteLine();
+
+            // bottom rule
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine(rule);
+            Console.ResetColor();
+        }
+
+        // === small helpers ===
+        private static void WriteBadge(string text, ConsoleColor bg)
+        {
+            Console.ForegroundColor = ConsoleColor.Black;
+            Console.BackgroundColor = bg;
+            Console.Write($" {text} ");
+            Console.ResetColor();
+        }
+
+        private static void WriteKvp(string key, string value, ConsoleColor valueColor)
+        {
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.Write("  " + key + ": ");
+            Console.ResetColor();
+            Console.ForegroundColor = valueColor;
+            Console.Write(value);
+            Console.ResetColor();
+            Console.Write("  ");
         }
 
         /// <summary>
