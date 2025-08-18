@@ -1,7 +1,12 @@
 using System.Security.Cryptography;
 
+
+/// <summary>
+/// Provides a sealed, disposable MasterKey implementation using AES and HMAC keys.
+/// </summary>
 namespace KVault
 {
+
     public sealed class MasterKey : IDisposable
     {
         public byte[] AesKey { get; } // 32 bytes

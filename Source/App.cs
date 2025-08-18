@@ -69,15 +69,15 @@ namespace KVault
                 {
                     switch (cmd)
                     {
-                        case "help": PrintHelp(); break;
+                        case "help": PrintHelpDetailed(); break;
                         case "unlock": CmdUnlock(); break;
                         case "lock": CmdLock(); break;
                         case "add": CmdAdd(parts); break;
                         case "get": CmdGet(parts); break;
                         case "copy": CmdCopy(parts); break;
                         case "gen": CmdGen(parts); break;
-                        case "list": CmdListTiles(parts); break;
-                        case "ls": CmdListTiles(parts); break;
+                        case "list": CmdList(parts); break;
+                        case "ls": CmdList(parts); break;
                         case "search": CmdSearch(parts); break;
                         case "update": CmdUpdate(parts); break;
                         case "remove": CmdRemove(parts); break;
@@ -314,10 +314,30 @@ namespace KVault
             ).ToList();
 
             if (results.Count == 0) { Console.WriteLine("No matches."); return; }
+
+            int width = GetSafeWindowWidth();
+            int labelW = 10; // label column width
+            string sep = new string('─', Math.Min(width, 120));
+
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine($"Credentials ({results.Count})");
+            Console.ResetColor();
+            Console.WriteLine(sep);
+
             foreach (var c in results)
             {
                 var tags = (c.Tags == null || c.Tags.Count == 0) ? "-" : string.Join(',', c.Tags);
-                Console.WriteLine($"{c.Id}  |  {c.Service}  |  {c.Username}  |  tags: {tags}  |  updated {c.UpdatedAtUtc:yyyy-MM-dd HH:mm}Z");
+
+                PrintField("ID", c.Id.ToString(), labelW, width, ConsoleColor.Yellow);
+                PrintField("Service", c.Service, labelW, width, ConsoleColor.Cyan);
+                PrintField("Username", c.Username, labelW, width, ConsoleColor.White);
+                PrintField("Tags", tags, labelW, width, ConsoleColor.Green);
+                PrintField("Updated", c.UpdatedAtUtc.ToLocalTime()
+                                                       .ToString("yyyy-MM-dd HH:mm"), labelW, width, ConsoleColor.DarkGray);
+                if (!string.IsNullOrWhiteSpace(c.Notes))
+                    PrintField("Notes", c.Notes!, labelW, width, ConsoleColor.Gray);
+
+                Console.WriteLine(sep);
             }
         }
 
@@ -371,43 +391,78 @@ namespace KVault
             Console.WriteLine(ok ? "Tags updated." : "Not found.");
         }
 
-        /// <summary>
-        /// List credentials stored in vault
-        /// </summary>
-        private void CmdList(IReadOnlyList<string> args)
+        static void PrintField(string label, string? value, int labelW, int totalWidth, ConsoleColor valueColor)
         {
-            RequireUnlocked();
-            string? tagFilter = null;
-            for (int i = 1; i < args.Count; i++)
+            value ??= "-";
+            int max = Math.Max(20, totalWidth - labelW - 3); // space for value, respecting label column
+            var lines = Wrap(value, max);
+
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.Write(label.PadRight(labelW));
+            Console.ResetColor();
+            Console.ForegroundColor = valueColor;
+            Console.WriteLine(" " + lines[0]);
+            Console.ResetColor();
+
+            for (int i = 1; i < lines.Count; i++)
             {
-                var a = args[i];
-                if (a.Equals("--tag", StringComparison.OrdinalIgnoreCase) || a.Equals("-t", StringComparison.OrdinalIgnoreCase))
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.Write(new string(' ', labelW));
+                Console.ResetColor();
+                Console.ForegroundColor = valueColor;
+                Console.WriteLine(" " + lines[i]);
+                Console.ResetColor();
+            }
+        }
+
+        static List<string> Wrap(string text, int maxWidth)
+        {
+            // Simple word-wrapping without truncation
+            var words = text.Split(' ', StringSplitOptions.None);
+            var lines = new List<string>();
+            var sb = new StringBuilder();
+
+            foreach (var w in words)
+            {
+                // if a single word is longer than maxWidth, hard-split it
+                if (w.Length > maxWidth)
                 {
-                    if (i + 1 >= args.Count) { Console.WriteLine("Usage: list [--tag <tag>]"); return; }
-                    tagFilter = args[++i];
+                    if (sb.Length > 0) { lines.Add(sb.ToString()); sb.Clear(); }
+                    int idx = 0;
+                    while (idx < w.Length)
+                    {
+                        int take = Math.Min(maxWidth, w.Length - idx);
+                        lines.Add(w.Substring(idx, take));
+                        idx += take;
+                    }
+                    continue;
                 }
+
+                int addLen = (sb.Length == 0 ? 0 : 1) + w.Length;
+                if (sb.Length + addLen > maxWidth)
+                {
+                    lines.Add(sb.ToString());
+                    sb.Clear();
+                }
+                if (sb.Length > 0) sb.Append(' ');
+                sb.Append(w);
             }
 
-            using var repo = CreateRepository();
-            var rows = repo.List();
-            if (!string.IsNullOrEmpty(tagFilter))
-            {
-                rows = rows.Where(c => c.Tags != null && c.Tags.Any(t => string.Equals(t, tagFilter, StringComparison.OrdinalIgnoreCase)));
-            }
-            var list = rows.ToList();
-            if (list.Count == 0) { Console.WriteLine("(empty)"); return; }
-            foreach (var c in list)
-            {
-                var tags = (c.Tags == null || c.Tags.Count == 0) ? "-" : string.Join(',', c.Tags);
-                Console.WriteLine($"{c.Id}  |  {c.Service}  |  {c.Username}  |  tags: {tags}  |  updated {c.UpdatedAtUtc:yyyy-MM-dd HH:mm}Z");
-            }
+            if (sb.Length > 0) lines.Add(sb.ToString());
+            if (lines.Count == 0) lines.Add(string.Empty);
+            return lines;
+        }
+
+        static int GetSafeWindowWidth()
+        {
+            try { return Console.WindowWidth; }
+            catch { return 100; } // Fallback for redirected output / non-TTY
         }
 
         /// <summary>
         /// List credentials stored in vault
         /// </summary>
-
-        private void CmdListTiles(IReadOnlyList<string> args)
+        private void CmdList(IReadOnlyList<string> args)
         {
             RequireUnlocked();
 
@@ -457,73 +512,6 @@ namespace KVault
                 Console.WriteLine(sep);
             }
 
-            static void PrintField(string label, string? value, int labelW, int totalWidth, ConsoleColor valueColor)
-            {
-                value ??= "-";
-                int max = Math.Max(20, totalWidth - labelW - 3); // space for value, respecting label column
-                var lines = Wrap(value, max);
-
-                Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.Write(label.PadRight(labelW));
-                Console.ResetColor();
-                Console.ForegroundColor = valueColor;
-                Console.WriteLine(" " + lines[0]);
-                Console.ResetColor();
-
-                for (int i = 1; i < lines.Count; i++)
-                {
-                    Console.ForegroundColor = ConsoleColor.DarkGray;
-                    Console.Write(new string(' ', labelW));
-                    Console.ResetColor();
-                    Console.ForegroundColor = valueColor;
-                    Console.WriteLine(" " + lines[i]);
-                    Console.ResetColor();
-                }
-            }
-
-            static List<string> Wrap(string text, int maxWidth)
-            {
-                // Simple word-wrapping without truncation
-                var words = text.Split(' ', StringSplitOptions.None);
-                var lines = new List<string>();
-                var sb = new StringBuilder();
-
-                foreach (var w in words)
-                {
-                    // if a single word is longer than maxWidth, hard-split it
-                    if (w.Length > maxWidth)
-                    {
-                        if (sb.Length > 0) { lines.Add(sb.ToString()); sb.Clear(); }
-                        int idx = 0;
-                        while (idx < w.Length)
-                        {
-                            int take = Math.Min(maxWidth, w.Length - idx);
-                            lines.Add(w.Substring(idx, take));
-                            idx += take;
-                        }
-                        continue;
-                    }
-
-                    int addLen = (sb.Length == 0 ? 0 : 1) + w.Length;
-                    if (sb.Length + addLen > maxWidth)
-                    {
-                        lines.Add(sb.ToString());
-                        sb.Clear();
-                    }
-                    if (sb.Length > 0) sb.Append(' ');
-                    sb.Append(w);
-                }
-
-                if (sb.Length > 0) lines.Add(sb.ToString());
-                if (lines.Count == 0) lines.Add(string.Empty);
-                return lines;
-            }
-
-            static int GetSafeWindowWidth()
-            {
-                try { return Console.WindowWidth; }
-                catch { return 100; } // Fallback for redirected output / non-TTY
-            }
         }
 
 
@@ -803,6 +791,136 @@ namespace KVault
   
   exit|quit|bye                        Exit app");
         }
+
+        /// <summary>
+        /// Displays the command help with colors and tidy formatting.
+        /// </summary>
+        private static void PrintHelpDetailed()
+        {
+            int width = GetSafeWindowWidth();
+            int leftPad = 2;                 // left margin
+            int cmdColWidth = 38;            // width reserved for the command column
+            int descWidth = Math.Max(20, width - leftPad - cmdColWidth - 3);
+
+            void Section(string title)
+            {
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine(new string(' ', leftPad) + title);
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.WriteLine(new string(' ', leftPad) + new string('─', Math.Min(title.Length, Math.Max(20, width - leftPad - 2))));
+                Console.ResetColor();
+            }
+
+            void Cmd(string cmd, string desc, ConsoleColor cmdColor = ConsoleColor.Yellow)
+            {
+                // first line
+                Console.ForegroundColor = cmdColor;
+                Console.Write(new string(' ', leftPad) + cmd.PadRight(cmdColWidth));
+                Console.ResetColor();
+
+                var lines = Wrap(desc, descWidth);
+                Console.WriteLine(lines[0]);
+
+                // continuation lines for wrapped description
+                for (int i = 1; i < lines.Count; i++)
+                {
+                    Console.Write(new string(' ', leftPad) + new string(' ', cmdColWidth));
+                    Console.WriteLine(lines[i]);
+                }
+            }
+
+            Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine(new string(' ', leftPad) + "Password Manager — Commands");
+            Console.ResetColor();
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine(new string(' ', leftPad) + "Tip: values in <angle brackets> are required; [square brackets] are optional.");
+            Console.ResetColor();
+            Console.WriteLine();
+
+            Section("General");
+            Cmd("help", "Show this help");
+            Cmd("exit | quit | bye", "Exit app");
+            Console.WriteLine();
+
+            Section("Vault");
+            Cmd("unlock", "Unlock the vault");
+            Cmd("lock", "Lock the vault");
+            Cmd("change-master", "Change master password (re‑encrypts all)");
+            Console.WriteLine();
+
+            Section("Listing & Search");
+            Cmd("list [--tag <tag>]", "List passwords (optionally filter by tag)");
+            Cmd("search <term>", "Search service / username / notes / tags");
+            Console.WriteLine();
+
+            Section("Credentials");
+            Cmd("add <service> <user> [notes]", "Add a password (leave password empty to auto‑generate)");
+            Cmd("get <service> <user> [--show]", "Copy password to clipboard (default). Add --show to print");
+            Cmd("copy <service> <user>", "Explicitly copy password to clipboard");
+            Cmd("update <id>", "Update password by credential id (leave empty to auto‑generate)");
+            Cmd("remove <id>", "Remove credential by id");
+            Console.WriteLine();
+
+            Section("Tags");
+            Cmd("tag <id> add <tag>", "Add one tag to a credential");
+            Console.WriteLine();
+
+            Section("Generator");
+            Cmd("gen [len] [flags]", "Generate a password (copies by default). Flags: --show, --no-upper, --no-lower, --no-digits, --no-symbols, --allow-ambiguous");
+            Console.WriteLine();
+
+            Section("Settings");
+            Cmd("set clipboard-timeout <seconds|off>", "Configure clipboard auto‑clear");
+            Cmd("set idle-timeout <minutes|off>", "Configure auto‑lock timeout");
+            Console.WriteLine();
+
+            Console.ResetColor();
+
+            // --- helpers ---
+            static List<string> Wrap(string text, int maxWidth)
+            {
+                var words = text.Split(' ', StringSplitOptions.None);
+                var lines = new List<string>();
+                var sb = new StringBuilder();
+
+                foreach (var w in words)
+                {
+                    if (w.Length > maxWidth)
+                    {
+                        if (sb.Length > 0) { lines.Add(sb.ToString()); sb.Clear(); }
+                        int idx = 0;
+                        while (idx < w.Length)
+                        {
+                            int take = Math.Min(maxWidth, w.Length - idx);
+                            lines.Add(w.Substring(idx, take));
+                            idx += take;
+                        }
+                        continue;
+                    }
+
+                    int addLen = (sb.Length == 0 ? 0 : 1) + w.Length;
+                    if (sb.Length + addLen > maxWidth)
+                    {
+                        lines.Add(sb.ToString());
+                        sb.Clear();
+                    }
+                    if (sb.Length > 0) sb.Append(' ');
+                    sb.Append(w);
+                }
+                if (sb.Length > 0) lines.Add(sb.ToString());
+                if (lines.Count == 0) lines.Add(string.Empty);
+                return lines;
+            }
+
+            static int GetSafeWindowWidth()
+            {
+                try { return Math.Max(60, Console.WindowWidth); }
+                catch { return 100; } // redirected output / CI
+            }
+        }
+
 
         /// <summary>
         /// Reads a line from the console while echoing asterisks instead of the typed characters.
