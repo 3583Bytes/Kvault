@@ -771,6 +771,7 @@ namespace KVault
             int ruleWidth = Math.Clamp(width - 2, 60, 100); // keep it nice even on very wide consoles
             string rule = new string('═', ruleWidth);
 
+            Console.Clear();
             // top rule
             Console.ForegroundColor = ConsoleColor.DarkGray;
             Console.WriteLine(rule);
