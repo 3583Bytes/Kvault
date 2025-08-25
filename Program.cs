@@ -3,7 +3,7 @@
 // .NET 6+ compatible. Build with:  dotnet new console -n PasswordManager && replace Program.cs, then `dotnet run`
 
 
-namespace KVault
+namespace kvault
 {
     #region Program Entry
     public static class Program

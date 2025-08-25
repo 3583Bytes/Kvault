@@ -1,7 +1,8 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using kvault.Source.Abstractions;
 
-namespace KVault
+namespace kvault.Source.Implementations
 {
     public sealed class CrossPlatformClipboardService : IClipboardService
     {

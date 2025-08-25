@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
+using kvault.Source.Abstractions;
+using kvault.Source.Models;
 
-namespace KVault
+namespace kvault.Source.Implementations
 {
     public sealed class Pbkdf2KeyDerivationService : IKeyDerivationService
     {

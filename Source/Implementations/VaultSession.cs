@@ -1,7 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
+using kvault.Source.DomainModels;
+using kvault.Source.Abstractions;
+using kvault.Source.Models;
 
-namespace KVault
+namespace kvault.Source.Implementations
 {
     public sealed class VaultSession : IVaultSession
     {

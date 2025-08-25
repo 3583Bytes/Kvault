@@ -1,4 +1,4 @@
-namespace KVault
+namespace kvault.Source.DomainModels
 {
     public sealed class Credential
     {

@@ -1,4 +1,4 @@
-namespace KVault
+namespace kvault.Source.Configuration
 {
     // Configuration
     /// <summary>
@@ -16,7 +16,7 @@ namespace KVault
         /// Idle time (minutes) before auto-lock; 0 disables auto-lock.
         /// </summary>
         public int IdleTimeoutMinutes { get; set; } = 5;       // 0 to disable
-        
+
         // Password generator defaults
         /// <summary>
         /// Default generated password length (8..128).

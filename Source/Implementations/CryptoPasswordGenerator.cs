@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
+using kvault.Source.Abstractions;
 
-namespace KVault
+namespace kvault.Source.Implementations
 {
     public sealed class CryptoPasswordGenerator : IPasswordGenerator
     {
@@ -49,7 +50,7 @@ namespace KVault
         }
 
         /// <summary>
-        /// Fisher–Yates shuffle using crypto-random indices.
+        /// Fisherï¿½Yates shuffle using crypto-random indices.
         /// </summary>
         private static void Shuffle(char[] array)
         {

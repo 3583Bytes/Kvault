@@ -1,4 +1,6 @@
-namespace KVault
+using kvault.Source.Models;
+
+namespace kvault.Source.Abstractions
 {
     public interface IVaultSession
     {

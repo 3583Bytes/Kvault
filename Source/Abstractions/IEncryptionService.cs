@@ -1,4 +1,4 @@
-namespace KVault
+namespace kvault.Source.Abstractions
 {
     public interface IEncryptionService
     {

@@ -1,8 +1,10 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using kvault.Source.DomainModels;
+using kvault.Source.Abstractions;
 
-namespace KVault
+namespace kvault.Source.Implementations
 {
     public sealed class FileVaultStore : IVaultStore
     {

@@ -1,7 +1,12 @@
 using System.Security.Cryptography;
 using System.Text;
+using kvault.Source.Implementations;
+using kvault.Source.DomainModels;
+using kvault.Source.Abstractions;
+using kvault.Source.Configuration;
+using kvault.Source.Models;
 
-namespace KVault
+namespace kvault
 {
 
     public sealed class App
@@ -16,11 +21,10 @@ namespace KVault
         private readonly IClipboardService _clipboard;
         private readonly IPasswordGenerator _passwordGenerator;
         private TimeSpan _idleTimeout;
-        private readonly System.Threading.Timer _idleTimer;
+        private readonly Timer _idleTimer;
         private readonly object _idleSync = new();
-        private readonly TimeSpan _clipboardClearDefault = TimeSpan.FromSeconds(20);
         private TimeSpan _clipboardClearAfter;
-        private readonly System.Threading.Timer _clipboardTimer;
+        private readonly Timer _clipboardTimer;
         private VaultData _vault;
         private readonly VaultSession _session;
 

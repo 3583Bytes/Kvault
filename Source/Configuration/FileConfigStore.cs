@@ -1,7 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using kvault.Source.Abstractions;
 
-namespace KVault
+namespace kvault.Source.Configuration
 {
     public sealed class FileConfigStore : IConfigStore
     {

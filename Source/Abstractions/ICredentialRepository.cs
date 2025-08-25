@@ -1,4 +1,6 @@
-namespace KVault
+using kvault.Source.DomainModels;
+
+namespace kvault.Source.Abstractions
 {
     public interface ICredentialRepository
     {

@@ -1,4 +1,6 @@
-namespace KVault
+using kvault.Source.Configuration;
+
+namespace kvault.Source.Abstractions
 {
     public interface IConfigStore
     {

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
+using kvault.Source.Abstractions;
 
-namespace KVault
+namespace kvault.Source.Implementations
 {
     public sealed class AesGcmEncryptionService : IEncryptionService
     {
