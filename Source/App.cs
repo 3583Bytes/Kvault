@@ -103,17 +103,34 @@ namespace kvault
 
         /// <summary>
         /// Ensures the vault has a master password set; prompts to initialize if not present.
+        /// Keeps prompting until the two passwords match.
         /// </summary>
         private void EnsureInitialized()
         {
             if (_vault.Metadata.VerificationHmac is { Length: > 0 }) return;
+
             Console.WriteLine("No master password set. Initializing a new vault...");
-            var master = PromptHidden("Create master password: ");
-            var confirm = PromptHidden("Confirm master password: ");
-            if (master != confirm) throw new InvalidOperationException("Passwords do not match.");
-            _session.InitializeVault(master);
-            Console.WriteLine("Vault initialized. Use 'unlock' to begin.");
+            while (true)
+            {
+                var master = PromptHidden("Create master password: ");
+                var confirm = PromptHidden("Confirm master password: ");
+
+                if (master == confirm)
+                {
+                    _session.InitializeVault(master);
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine("Vault initialized. Use 'unlock' to begin.");
+                    Console.ResetColor();
+                    break;
+                }
+
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("Passwords do not match. Please try again (Ctrl+C to cancel).");
+                Console.ResetColor();
+                Console.WriteLine();
+            }
         }
+
 
         /// <summary>
         /// Unlocks the vault by deriving the master key from the provided password.
