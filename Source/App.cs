@@ -1,10 +1,12 @@
 using System.Security.Cryptography;
 using System.Text;
 using kvault.Source.Implementations;
+using kvault.Source.Abstractions;
 using kvault.Source.DomainModels;
 using kvault.Source.Abstractions;
 using kvault.Source.Configuration;
 using kvault.Source.Models;
+using kvault.Source.Abstractions;
 
 namespace kvault
 {
@@ -20,6 +22,7 @@ namespace kvault
         private readonly IEncryptionService _enc;
         private readonly IClipboardService _clipboard;
         private readonly IPasswordGenerator _passwordGenerator;
+        private readonly IPasswordStrengthService _passwordStrengthService;
         private TimeSpan _idleTimeout;
         private readonly Timer _idleTimer;
         private readonly object _idleSync = new();
@@ -41,6 +44,7 @@ namespace kvault
             _enc = new AesGcmEncryptionService();
             _clipboard = new CrossPlatformClipboardService();
             _passwordGenerator = new CryptoPasswordGenerator();
+            _passwordStrengthService = new PasswordStrengthService();
             _session = new VaultSession(_vaultPath, _vault, _store, _kdf);
             _configPath = configPath;
             _configStore = new FileConfigStore();
@@ -180,6 +184,11 @@ namespace kvault
                 pwd = _passwordGenerator.Generate(_config.GeneratorLength, _config.GeneratorUpper, _config.GeneratorLower, _config.GeneratorDigits, _config.GeneratorSymbols, _config.GeneratorExcludeAmbiguous);
                 _clipboard.SetText(pwd);
                 Console.WriteLine("Generated a strong password and copied to clipboard.");
+            }
+            else
+            {
+                var strength = _passwordStrengthService.GetStrength(pwd);
+                Console.WriteLine($"Password strength: {strength}");
             }
 
             using var repo = CreateRepository();
@@ -573,6 +582,11 @@ namespace kvault
                 _clipboard.SetText(pwd);
                 Console.WriteLine("Generated and copied new password to clipboard.");
                 ScheduleClipboardClear();
+            }
+            else
+            {
+                var strength = _passwordStrengthService.GetStrength(pwd);
+                Console.WriteLine($"Password strength: {strength}");
             }
             using var repo = CreateRepository();
             if (repo.UpdatePassword(id, pwd)) Console.WriteLine("Updated."); else Console.WriteLine("Not found.");
